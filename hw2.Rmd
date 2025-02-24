@@ -1,0 +1,124 @@
+---
+title: "HW2"
+output: html_document
+date: "2025-02-23"
+---
+
+```{r setup, include=FALSE}
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(shinythemes)
+library(tidyverse)
+```
+
+```{r}
+data = read_csv("https://github.com/Memoryjianjian/Stat-436/raw/refs/heads/main/Cholera_data.csv")
+```
+
+```{r}
+problems(data)
+```
+
+```{r}
+head(data, 20)
+data$`Number of reported cases of cholera` = replace_na(data$`Number of reported cases of cholera`, 0)
+data$`Number of reported deaths from cholera` = replace_na(data$`Number of reported deaths from cholera`, 0)
+data$`Cholera case fatality rate` = replace_na(data$`Cholera case fatality rate`, 0)
+```
+
+```{r}
+# plot1
+country_over_time_plot = function(filtered_data, country) {
+  ggplot(filtered_data, aes(x = Year, y = `Number of reported cases of cholera`)) +
+    geom_line(color = "cornflowerblue", size = 1) +
+    geom_point(color = "brown2", size = 2) +
+    labs(title = paste("Cholera Cases in", country),
+         x = "Year", y = "Number of Cases") +
+    theme(plot.title = element_text(size = 18,  hjust = 0.5), 
+        axis.title.x = element_text(size = 16, face = "bold"),  
+        axis.title.y = element_text(size = 16, face = "bold"),  
+        axis.text.x = element_text(size = 14),  
+        axis.text.y = element_text(size = 14)) +
+    theme_bw()
+}
+
+# plot2
+regional_comparison_plot = function(region_data, region) {
+  ggplot(region_data, aes(x = reorder(Country, `Number of reported cases of cholera`), y = `Number of reported cases of cholera`)) +
+    geom_bar(stat = "identity", fill = "cornflowerblue") +
+    labs(title = paste("Top 10 Cholera-affected Countries in", region),
+         x = "Country", y = "Number of Cases") +
+    coord_flip() +
+    theme_bw()
+}
+
+# plot3
+global_overview_plot = function(global_data, country) {
+  global_data = global_data %>% 
+    mutate(Highlight = ifelse(Country == country, "Selected country", "Other countries"))
+
+  ggplot(global_data, aes(x = Year, y = `Number of reported cases of cholera`, color = Highlight)) +
+    geom_point(alpha = 0.5) +
+    scale_color_manual(values = c("Other countries" = "grey", "Selected country" = "red")) +
+    labs(title = "Global Cholera Cases Over Time",
+         x = "Year", y = "Number of Cases", 
+         color = "Country Status") +
+    ylim(0, 70000) +
+    theme_bw()
+}
+
+# UI
+ui = fluidPage(
+  titlePanel("Cholera Cases and Fatalities across Different Regions"), 
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("country", "Select a Country:", unique(data$Country), "Afghanistan"),
+      sliderInput("year", "Select Year Range:", min = min(data$Year), max = max(data$Year), 
+                  c(min(data$Year), max(data$Year))), 
+      selectInput("region", "Select a Region", unique(data$`WHO Region`), "Africa")
+    ),
+    
+    mainPanel(
+      fluidRow(
+        column(12, plotOutput("country_over_time_plot")) # Full width for time series
+      ),
+      fluidRow(
+        column(5, plotOutput("regional_comparison_plot")),  # Left side for regional comparison
+        column(7, plotOutput("global_overview_plot"))       # Right side for global overview
+      ))))
+
+# Server
+server = function(input, output) {
+  filtered_data = reactive({
+    data %>% filter(Country == input$country & Year >= input$year[1] & Year <= input$year[2])
+  })
+  region_data = reactive({
+    data %>% filter(`WHO Region` == input$region & Year == max(Year, na.rm = TRUE)) %>%
+      arrange(desc(`Number of reported cases of cholera`)) %>% head(10)
+  })
+  global_data = reactive({
+    data %>% filter(Year >= input$year[1] & Year <= input$year[2])
+  })
+  
+  output$country_over_time_plot = renderPlot({
+    country_over_time_plot(filtered_data(), input$country)
+  })
+  output$regional_comparison_plot = renderPlot({
+    regional_comparison_plot(region_data(), input$region)
+  })
+  output$global_overview_plot = renderPlot({
+    global_overview_plot(global_data(), input$country)
+  })
+}
+
+app = shinyApp(ui, server)
+
+app
+
+```
+
+
+
+

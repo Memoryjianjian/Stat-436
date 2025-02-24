@@ -1,0 +1,239 @@
+---
+title: "HW1"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(tidyverse)
+library(scales)
+install.packages("Shiny")
+library(shiny)
+
+ui <- fluidPage(
+  
+)
+
+server <- function(input, output, session) {
+  
+}
+
+shinyApp(ui, server))
+
+install.packages("viridis") 
+library("viridis")
+```
+
+NYC Flights
+
+```{r}
+library(nycflights13)
+flights_subset = select(flights, carrier, air_time, distance)
+
+flights_subset_a = flights_subset %>% mutate(speed = distance/air_time)
+
+head(flights_subset_a)
+
+average_speed <- mean(flights_subset_a$speed, na.rm = TRUE)
+
+ggplot(flights_subset_a, aes(x = carrier, y = speed)) +
+  geom_boxplot(fill = "cornflowerblue", 
+               alpha = 0.7, 
+               outlier.color = "brown2", 
+               outlier.size = 0.5) +
+  geom_hline(yintercept = average_speed, linetype = "dashed", color = "red", size = 0.3) +
+  labs(title = "Flight Speed Boxplots by Carrier",
+       subtitle = "Outliers Highlighted in red", 
+       x = "Airline Carriers",
+       y = "Speed") +
+  theme_minimal()
+```
+Airline HA has the fastest average speed. The variation of speed in airline AS, HA, and OO is relatively small. The variation of speed in airline 9E, B6, US, and YV is relatively large. The average speed is around 6.8. 
+
+London Olympics
+```{r}
+olympics<-read_csv("https://uwmadison.box.com/shared/static/rzw8h2x6dp5693gdbpgxaf2koqijo12l.csv")
+
+head(olympics)
+
+sport_age = olympics %>% group_by(Sport) %>% summarise(age_mean = mean(Age))
+
+ggplot(olympics, aes(x = reorder(Sport, Age), y = Age))+
+  geom_boxplot(fill = "cornflowerblue",
+               col = "blue", 
+               alpha = 0.5, 
+               outlier.color = "black", 
+               outlier.size = 0.5, 
+               )+
+  geom_point(data = sport_age, aes(x = Sport, y = age_mean), color = "red", size = 1.5, alpha = 0.35) +
+  coord_flip()+
+  labs(title = "Age Distribution of Athletes Across Sports",
+       subtitle = "sorted by average age & mean ages shown in red spots", 
+       x = "Sport",
+       y = "Age")+
+  theme_bw()+
+  theme(plot.title = element_text(size = 18,  hjust = 0.5), 
+        plot.subtitle = element_text(size = 14, hjust = 0.5),  
+        axis.title.x = element_text(size = 16, face = "bold"),  
+        axis.title.y = element_text(size = 16, face = "bold"),  
+        axis.text.x = element_text(size = 14),  
+        axis.text.y = element_text(size = 14))
+
+ggsave("olympics_age_distribution.png", width = 12, height = 15, dpi = 300)
+
+```
+
+New question: whats the gender percentage vary across different sports?
+
+```{r}
+
+  
+```
+Pokemon
+
+```{r}
+pokemon<-read_csv("https://uwmadison.box.com/shared/static/hf5cmx3ew3ch0v6t0c2x56838er1lt2c.csv")
+
+pokemon = pokemon %>% mutate(a_d_ratio = Attack/Defense)
+
+type1_median = pokemon %>% group_by(type_1) %>% summarise(Median = median(a_d_ratio)) %>% arrange(desc(Median))
+
+pokemon = pokemon %>%
+  mutate(type_1 = factor(type_1, levels = type1_median$type_1))
+
+ggplot(pokemon, aes(x = Defense, y = Attack, color = type_1)) +
+  geom_point(alpha = 0.6) +
+  facet_wrap(~ type_1, scales = "free") +
+  labs(title = "Attack vs. Defense by Pokémon Type",
+       x = "Defense",
+       y = "Attack") +
+  theme_bw()+
+  theme(legend.position = "bottom", 
+        plot.title = element_text(size = 18,  hjust = 0.5), 
+        axis.title.x = element_text(size = 15, face = "bold"),  
+        axis.title.y = element_text(size = 15, face = "bold"),  
+        axis.text.x = element_text(size = 12),  
+        axis.text.y = element_text(size = 12))
+  
+```
+
+
+Gene Expression Faceting
+
+```{r}
+genes<-read_csv("https://uwmadison.box.com/shared/static/dwzchdtfca33r0f6i055k2d0939onnlv.csv")
+head(genes,3)
+
+ggplot(genes, aes(x = time, y = log(1+value))) +
+  geom_point(alpha = 0.5)+
+  facet_wrap(~gene, ncol = 4)+
+  labs(x = "Time", 
+       y = "log(1+value)")+
+  theme_bw()+
+  theme(strip.text = element_text(size = 13), 
+        axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 10))
+
+
+```
+```{r}
+gene_groups = genes %>% 
+  group_by(gene,rounded_time=round(time,2)) %>% 
+  summarise(mean_value=mean(value))
+
+head(gene_groups)
+
+gene_order = gene_groups %>% 
+  group_by(gene) %>% 
+  summarise(abundance = sum(mean_value)) %>% 
+  arrange(abundance)
+
+gene_groups$gene = factor(gene_groups$gene, levels = gene_order$gene)
+
+gene_groups = gene_groups %>%
+  arrange(gene)
+
+ggplot(gene_groups, aes(x = rounded_time , y = gene, fill = log(1 + mean_value))) +
+  geom_tile() + 
+  scale_fill_gradient(low = "lightblue1", high = "deepskyblue3") +
+  theme_minimal() + 
+  labs(y = "Gene (Sorted by Expression)", 
+       x = "Time (Rounded)") +
+  scale_x_continuous(expand = c(0.01, 0)) +  
+  scale_y_discrete(expand = c(0, 0))  
+
+
+```
+
+
+```{r}
+fitted_values<-read_csv("https://go.wisc.edu/x678hu")
+head(fitted_values,3)
+
+ggplot() +
+  geom_point(data = genes, aes(x = time, y = log(1+value)), alpha = 0.5) +
+  geom_line(data = fitted_values, aes(x = time, y = log(1 + mu)), col = "red", size = 1) +
+  facet_wrap(~gene, ncol = 4) +
+  theme_bw() +
+  labs(x = "Time", y = "log(1 + value)")
+  
+```
+
+```{r}
+bacteria <- read.csv("/Users/xingjianyang/Desktop/2024-Tn Lib/Tet-recheck/Zwm_check_1&2&3_combined.csv")
+
+bacteria = bacteria %>%
+  mutate(strain = case_when(
+    Well_ID == "BLK" ~ "BLK",
+    Well_ID %in% c("SPL1", "SPLC1") ~ "P. k WT",
+    Well_ID %in% c("SPL2", "SPLC2") ~ "P8A10",
+    Well_ID %in% c("SPL3", "SPLC3") ~ "P8G4",
+    Well_ID %in% c("SPL4", "SPLC4") ~ "P9G4",
+    Well_ID %in% c("SPL5", "SPLC5") ~ "P11A3",
+    Well_ID %in% c("SPL6", "SPLC6") ~ "P12C2", 
+    Well_ID %in% c("SPL7", "SPLC7") ~ "BLK", 
+    Well_ID %in% c("SPL8", "SPLC8") ~ "BLK")) %>% 
+mutate(Antibiotic = case_when(
+    grepl("^SPL[0-9]*$", Well_ID) ~ "zwm A",
+    grepl("^SPLC[0-9]*$", Well_ID) ~ "No Antibiotics"))
+
+ggplot(bacteria, aes(x = strain, y = OD595, fill = Antibiotic)) +
+  geom_boxplot(alpha = 0.5) +
+  geom_jitter(aes(color = Antibiotic)) +
+  labs(title = "Different bacteria strain's biofilm production level in response to antibiotics",
+       x = "Bacteria Strain", 
+       y = "Biofilm (measured by OD595)") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        legend.position = "bottom")  
+  
+
+
+
+
+```
+
+```{r}
+fires = read_csv("https://uwmadison.box.com/shared/static/k5vvekf1bhh9e16qb9s66owygc70t7dm.csv") %>% 
+  select(Name,Counties,year,day_of_year,AcresBurned,MajorIncident)
+head(fires,3)
+
+ggplot(fires, aes(x = day_of_year, y = reorder(Counties, AcresBurned), size = log(AcresBurned))) +
+  geom_point(alpha = 0.5, color = "black") + 
+  facet_grid(.~ year) +  
+  scale_size_continuous(name = "log(AcresBurned)", range = c(1, 8)) + 
+  labs(
+    title = "California Wildfirese",
+    x = "Day of Year",
+    y = "County (Sorted by Acres Burned)") +
+  theme_bw() +
+  theme(
+    strip.text = element_text(face = "bold", size = 12), 
+    axis.text.y = element_text(size = 10))
+```
+
