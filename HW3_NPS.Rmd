@@ -1,0 +1,134 @@
+---
+title: "HW3_NPS"
+output:
+  html_document: default
+  pdf_document: default
+date: "2025-03-09"
+---
+
+```{r}
+library(tidytuesdayR)  
+library(tidyverse)      
+library(ggplot2)
+library(dplyr)
+library(shiny)
+library(RColorBrewer)
+library(viridis)
+
+most_visited_nps_species_data = read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2024/2024-10-08/most_visited_nps_species_data.csv")
+
+head(most_visited_nps_species_data)
+
+```
+
+```{r}
+species_summary = most_visited_nps_species_data %>%
+  group_by(ParkName, CategoryName) %>%
+  summarise(species_count = n(), .groups = "drop")
+
+total_species_per_park = species_summary %>%
+  group_by(ParkName) %>%
+  summarise(total_species = sum(species_count)) %>%
+  arrange(total_species)
+
+species_summary = species_summary %>%
+  left_join(total_species_per_park, by = "ParkName")
+
+species_summary = species_summary %>%
+  mutate(ParkName = factor(ParkName, levels = total_species_per_park$ParkName))
+
+ggplot(species_summary, aes(x = ParkName, y = species_count, fill = CategoryName)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Species Diversity Across 15 Most Visited U.S. National Parks",
+       x = "National Park", 
+       y = "Number of Species",
+       fill = "Taxonomic Group") +
+  coord_flip() +
+  theme_minimal() +
+  scale_y_log10() +
+  scale_fill_viridis_d(option = "turbo") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+```{r}
+te_status_data = most_visited_nps_species_data %>%
+  filter(!is.na(TEStatus), TEStatus != "None") %>%
+  group_by(ParkName, TEStatus) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(ParkName = reorder(ParkName, -count, sum))
+
+ggplot(te_status_data, aes(x = ParkName, y = count, fill = TEStatus)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Threatened/Endangered Species per National Park",
+       x = "National Park",
+       y = "Number of Species",
+       fill = "TE Status") +
+  coord_flip() +
+  theme_bw()
+
+```
+
+```{r}
+library(ggridges)
+
+most_visited_nps_species_data = most_visited_nps_species_data %>%
+  mutate(Abundance_Score = case_when(
+    Abundance == "Rare" ~ 1,
+    Abundance == "Uncommon" ~ 2,
+    Abundance == "Common" ~ 3,
+    Abundance == "Abundant" ~ 4,
+    TRUE ~ NA_real_  
+  ))
+
+
+ridge_data = most_visited_nps_species_data %>%
+  filter(!is.na(Abundance_Score), !is.na(ParkName))
+
+ggplot(ridge_data, aes(x = Abundance_Score, y = reorder(ParkName, Abundance_Score, median), fill = ParkName)) +
+  geom_density_ridges(alpha = 0.7, scale = 1.2) +
+  scale_x_continuous(breaks = 1:4, labels = c("Rare", "Uncommon", "Common", "Abundant")) +
+  labs(title = "Distribution of Different Species's Abundance level Across National Parks",
+       x = "Abundance Level",
+       y = "National Park",
+       fill = "National Park") +
+  theme_bw() + 
+  theme(legend.position = "none")
+
+```
+```{r}
+park_coordinates = tibble::tribble(
+  ~ParkName, ~latitude, ~longitude,
+  "Yellowstone National Park", 44.4280, -110.5885,
+  "Yosemite National Park", 37.8651, -119.5383,
+  "Grand Canyon National Park", 36.1069, -112.1129,
+  "Great Smoky Mountains National Park", 35.6532, -83.5070,
+  "Zion National Park", 37.2982, -113.0263,
+  "Rocky Mountain National Park", 40.3428, -105.6836,
+  "Acadia National Park", 44.3386, -68.2733,
+  "Glacier National Park", 48.7596, -113.7870,
+  "Joshua Tree National Park", 33.8734, -115.9000,
+  "Olympic National Park", 47.8021, -123.6044
+)
+
+
+species_map_data = most_visited_nps_species_data %>%
+  group_by(ParkName) %>%
+  summarise(species_count = n(), .groups = "drop") %>%
+  left_join(park_coordinates, by = "ParkName")
+
+library(leaflet)
+
+leaflet(species_map_data) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~longitude, lat = ~latitude, 
+    radius = ~sqrt(species_count) * 0.5,
+    color = "blue", fillOpacity = 0.5,
+    popup = ~paste0("<b>", ParkName, "</b><br>Species Count: ", species_count)
+  ) %>%
+  addProviderTiles(providers$CartoDB.Positron)  # Use a clean background map
+
+```
+
