@@ -192,14 +192,6 @@ library(tidyr)
 library(reshape2)
 library(ggrepel)
 
-# Load and clean dataset
-df_clean <- read.csv("https://github.com/Memoryjianjian/Stat-436/raw/refs/heads/main/MetroHealth_Dataset_MileStone2.csv")
-us_cities <- read.csv("https://github.com/Memoryjianjian/Stat-436/raw/refs/heads/main/uscities.csv")
-
-df_clean <- df_clean %>%
-  separate(City, into = c("City_Name", "State_Abbrev"), sep = ", ", extra = "merge") %>%
-  left_join(us_cities, by = c("City_Name" = "city", "State_Abbrev" = "state_id")) %>%
-  drop_na()
 
 # Define UI
 ui <- dashboardPage(
