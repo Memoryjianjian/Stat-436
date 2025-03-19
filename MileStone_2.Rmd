@@ -1,0 +1,370 @@
+---
+title: "Milestone_2_Codes_Draft"
+output: html_document
+date: "2025-03-19"
+---
+
+```{r setup, include=FALSE}
+# libraries
+library(shiny)
+library(ggplot2)
+library(leaflet)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(corrplot)
+library(GGally)
+library(sf)
+```
+
+```{r}
+# import data
+df = read_csv("https://github.com/Memoryjianjian/Stat-436/raw/refs/heads/main/MetroHealth_Dataset_MileStone2.csv")
+# geodata for leaflet
+us_cities = read_csv("https://github.com/Memoryjianjian/Stat-436/raw/refs/heads/main/uscities.csv")
+```
+
+```{r}
+# clea data
+df_clean = df %>%
+  separate(City, into = c("City_Name", "State_Abbrev"), sep = ", ", extra = "merge")
+df_clean = df_clean %>% drop_na()
+
+us_cities = us_cities %>%
+  select(city, state_id, lat, lng)
+df_clean = df_clean %>%
+  left_join(us_cities, by = c("City_Name" = "city", "State_Abbrev" = "state_id"))
+
+head(df_clean, 10)
+```
+
+```{r}
+# UI for the Shiny app
+ui <- fluidPage(
+    titlePanel("Healthcare Data Visualization"),
+    sidebarLayout(
+        sidebarPanel(
+            selectInput("city", "Select City:", choices = unique(df_clean$City_Name), selected = unique(df_clean$City_Name)[1])
+        ),
+        mainPanel(
+            tabsetPanel(
+                tabPanel("Bar Chart", plotOutput("bar_chart")),
+                tabPanel("Scatter Plot", plotOutput("scatter_plot")),
+                tabPanel("Histogram", plotOutput("histogram")),
+                tabPanel("Correlation Heatmap", plotOutput("heatmap")),
+                tabPanel("Map", leafletOutput("map"))
+            )
+        )
+    )
+)
+
+# Server logic
+server <- function(input, output) {
+    
+    # Bar Chart: Number of Physicians Across Metro Areas
+    output$bar_chart <- renderPlot({
+        ggplot(df_clean, aes(x = reorder(City_Name, NumMDs), y = NumMDs)) +
+            geom_bar(stat = "identity", fill = "steelblue") +
+            coord_flip() +
+            theme_minimal() +
+            labs(title = "Number of Physicians Across Metro Areas", x = "City", y = "Number of Physicians")
+    })
+    
+    # Scatter Plot: Physicians vs. Hospitals
+    output$scatter_plot <- renderPlot({
+        ggplot(df_clean, aes(x = NumHospitals, y = NumMDs)) +
+            geom_point(color = "blue", alpha = 0.7) +
+            geom_smooth(method = "lm", color = "red") +
+            theme_minimal() +
+            labs(title = "Physicians vs. Hospitals", x = "Number of Hospitals", y = "Number of Physicians")
+    })
+    
+    # Histogram: Distribution of Medicare Rates
+    output$histogram <- renderPlot({
+        ggplot(df_clean, aes(x = MedicareRate)) +
+            geom_histogram(binwidth = 1000, fill = "blue", alpha = 0.7) +
+            theme_minimal() +
+            labs(title = "Distribution of Medicare Rates", x = "Medicare Recipients per 100,000", y = "Frequency")
+    })
+    
+    # Correlation Heatmap
+    output$heatmap <- renderPlot({
+        corr_matrix <- cor(df_clean[, sapply(df_clean, is.numeric)], use = "complete.obs")
+        corrplot(corr_matrix, method = "color", tl.cex = 0.7, addCoef.col = "black")
+    })
+    
+    # Leaflet Map: Distribution of Hospitals
+    output$map <- renderLeaflet({
+        leaflet(df_clean) %>%
+            addTiles() %>%
+            addCircles(lng = ~lng, lat = ~lat, weight = 1,
+                       radius = ~NumHospitals * 5000, popup = ~City_Name,
+                       color = "red", fillOpacity = 0.5) %>%
+            setView(lng = mean(df_clean$lng, na.rm = TRUE),
+                    lat = mean(df_clean$lat, na.rm = TRUE), zoom = 4)
+    })
+}
+
+# Run the application
+shinyApp(ui, server)
+```
+
+```{r}
+# UI for Shiny App
+ui <- fluidPage(
+    titlePanel("Healthcare Data Visualization"),
+    sidebarLayout(
+        sidebarPanel(
+            selectInput("metric", "Select Metric:", choices = c("RateMDs", "RateBeds"), selected = "RateMDs"),
+            selectInput("top_metric", "Select Top 10 Ranking Metric:", choices = c("NumHospitals", "NumRetired"), selected = "NumHospitals"),
+            sliderInput("size", "Bubble Size Range:", min = 1, max = 10, value = 5)
+        ),
+        mainPanel(
+            tabsetPanel(
+                tabPanel("Choropleth Map", leafletOutput("choropleth_map")),
+                tabPanel("Scatterplot Matrix", plotOutput("scatter_matrix")),
+                tabPanel("Top 10 Ranked Bar Charts", plotOutput("bar_chart")),
+                tabPanel("Correlation Heatmap", plotOutput("heatmap")),
+                tabPanel("Bubble Chart", plotOutput("bubble_chart"))
+            )
+        )
+    )
+)
+
+# Server logic
+server <- function(input, output) {
+    
+    # Choropleth Map
+    output$choropleth_map <- renderLeaflet({
+        df_clean_sf <- st_as_sf(df_clean, coords = c("lng", "lat"), crs = 4326)
+        leaflet(df_clean_sf) %>%
+            addTiles() %>%
+            addPolygons(fillColor = ~colorQuantile("YlOrRd", df_clean[[input$metric]])(df_clean[[input$metric]]), 
+                        weight = 1, popup = ~City_Name, fillOpacity = 0.7)
+    })
+    
+    # Scatterplot Matrix
+    output$scatter_matrix <- renderPlot({
+        GGally::ggpairs(df_clean, columns = c("NumMDs", "MedicareRate", "SSBRate", "SSIRate"))
+    })
+    
+    # Ranked Bar Charts
+    output$bar_chart <- renderPlot({
+        top_cities <- df_clean %>%
+            arrange(desc(get(input$top_metric))) %>%
+            head(10)
+        ggplot(top_cities, aes(x = reorder(City_Name, get(input$top_metric)), y = get(input$top_metric))) +
+            geom_bar(stat = "identity", fill = "steelblue") +
+            coord_flip() +
+            theme_minimal() +
+            labs(title = paste("Top 10 Cities by", input$top_metric), x = "City", y = input$top_metric)
+    })
+    
+    # Correlation Heatmap
+    output$heatmap <- renderPlot({
+        corr_matrix <- cor(df_clean[, sapply(df_clean, is.numeric)], use = "complete.obs")
+        corrplot(corr_matrix, method = "color", tl.cex = 0.7, addCoef.col = "black")
+    })
+    
+    # Bubble Chart
+    output$bubble_chart <- renderPlot({
+        ggplot(df_clean, aes(x = NumMDs, y = NumBeds, size = SSIRate, color = SSIRate)) +
+            geom_point(alpha = 0.7) +
+            scale_size(range = c(2, input$size * 3)) +
+            theme_minimal() +
+            labs(title = "Bubble Chart: Physicians, Beds, and SSIRate", x = "Number of Physicians", y = "Number of Beds")
+    })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
+```
+
+```{r}
+# Load necessary libraries
+library(shiny)
+library(shinydashboard)
+library(leaflet)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(tidyr)
+library(reshape2)
+library(ggrepel)
+
+# Load and clean dataset
+df_clean <- read.csv("https://github.com/Memoryjianjian/Stat-436/raw/refs/heads/main/MetroHealth_Dataset_MileStone2.csv")
+us_cities <- read.csv("https://github.com/Memoryjianjian/Stat-436/raw/refs/heads/main/uscities.csv")
+
+df_clean <- df_clean %>%
+  separate(City, into = c("City_Name", "State_Abbrev"), sep = ", ", extra = "merge") %>%
+  left_join(us_cities, by = c("City_Name" = "city", "State_Abbrev" = "state_id")) %>%
+  drop_na()
+
+# Define UI
+ui <- dashboardPage(
+  dashboardHeader(title = "US Healthcare Dashboard"),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Overview Map", tabName = "map", icon = icon("globe")),
+      menuItem("Ranked Bar Chart", tabName = "ranked", icon = icon("chart-bar")),
+      menuItem("Correlation Heatmap", tabName = "heatmap", icon = icon("th")),
+      menuItem("Bubble Chart", tabName = "bubble", icon = icon("circle")),
+      menuItem("Time-Series Trends", tabName = "timeseries", icon = icon("line-chart")),
+      menuItem("Scatterplot", tabName = "scatter", icon = icon("dot-circle")),
+      menuItem("State Comparison", tabName = "state", icon = icon("map"))
+    )
+  ),
+  dashboardBody(
+    tabItems(
+      # Map Tab
+      tabItem(tabName = "map",
+        fluidRow(
+          selectInput("metric", "Select Metric:", choices = c("Physicians per 100K" = "RateMDs", "Hospital Beds per 100K" = "RateBeds")),
+          leafletOutput("map")
+        )
+      ),
+      
+      # Ranked Bar Chart Tab
+      tabItem(tabName = "ranked",
+        fluidRow(
+          selectInput("ranked_metric", "Select Metric:", choices = c("Number of Hospitals" = "NumHospitals", 
+                                                                     "Number of Physicians" = "NumMDs", 
+                                                                     "Number of Retired Workers" = "NumRetired")),
+          plotOutput("ranked_plot")
+        )
+      ),
+      
+      # Correlation Heatmap Tab
+      tabItem(tabName = "heatmap",
+        fluidRow(
+          plotOutput("heatmap_plot")
+        )
+      ),
+      
+      # Bubble Chart Tab
+      tabItem(tabName = "bubble",
+        fluidRow(
+          plotlyOutput("bubble_chart")
+        )
+      ),
+      
+      # Time-Series Trends Tab
+      tabItem(tabName = "timeseries",
+        fluidRow(
+          plotOutput("timeseries_plot")
+        )
+      ),
+      
+      # Scatterplot Tab
+      tabItem(tabName = "scatter",
+        fluidRow(
+          plotOutput("scatter_plot")
+        )
+      ),
+      
+      # State Comparison Tab
+      tabItem(tabName = "state",
+        fluidRow(
+          selectInput("selected_state", "Select a State:", choices = unique(df_clean$State_Abbrev)),
+          plotOutput("state_comparison")
+        )
+      )
+    )
+  )
+)
+
+# Define Server
+server <- function(input, output) {
+  
+  # **Fixed Overview Map** (Scaled Circle Sizes)
+  output$map <- renderLeaflet({
+    leaflet(df_clean) %>%
+      addTiles() %>%
+      addCircleMarkers(
+        lng = ~lng, lat = ~lat, weight = 1,
+        radius = ~sqrt(get(input$metric)) * 0.6,  # Use sqrt() to prevent extreme circle sizes
+        color = "blue", fillOpacity = 0.5,
+        label = ~paste0(City_Name, 
+                        "<br><b>", input$metric, ":</b> ", get(input$metric))
+      )
+  })
+  
+  # **Fixed Ranked Bar Chart** (Ensures Proper Sorting)
+  output$ranked_plot <- renderPlot({
+    df_sorted <- df_clean %>%
+      arrange(desc(get(input$ranked_metric)))  # Ensure proper sorting
+    
+    ggplot(df_sorted, aes(x = reorder(City_Name, get(input$ranked_metric)), 
+                          y = get(input$ranked_metric), fill = State_Abbrev)) +
+      geom_bar(stat = "identity") +
+      coord_flip() +
+      labs(title = paste("Comparison of Cities by", input$ranked_metric), x = "City", y = input$ranked_metric) +
+      theme_minimal()
+  })
+  
+  # Correlation Heatmap
+  output$heatmap_plot <- renderPlot({
+    corr_matrix <- cor(df_clean %>% select(RateMDs, RateBeds, MedicareRate, SSBRate, SSIRate))
+    corr_melted <- melt(corr_matrix)
+    
+    ggplot(corr_melted, aes(Var1, Var2, fill = value)) +
+      geom_tile() +
+      geom_text(aes(label = round(value, 2)), color = "black") +
+      scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+      labs(title = "Correlation Heatmap: Healthcare vs. Socioeconomic Factors") +
+      theme_minimal()
+  })
+  
+  # Bubble Chart
+  output$bubble_chart <- renderPlotly({
+    bubble_chart <- ggplot(df_clean, aes(x = NumMDs, y = NumBeds, size = SSIRate, color = State_Abbrev, label = City_Name)) +
+      geom_point(alpha = 0.5) +
+      geom_text_repel(aes(label = City_Name), size = 3) +
+      scale_size(range = c(2, 8)) +
+      labs(title = "Bubble Chart: Physicians, Beds, and SSI Rate",
+           x = "Number of Physicians", y = "Number of Hospital Beds") +
+      theme_minimal()
+    
+    ggplotly(bubble_chart)
+  })
+  
+  # Time-Series Line Chart
+  output$timeseries_plot <- renderPlot({
+    ggplot(df_clean, aes(x = PctChangeMedicare, y = SSBChange, color = State_Abbrev)) +
+      geom_line(size = 1) +
+      labs(title = "Medicare and Social Security Growth Trends (2000-2004)",
+           x = "Medicare Growth (%)", y = "Social Security Growth (%)") +
+      theme_minimal()
+  })
+  
+  # Scatterplot with Regression Line
+  output$scatter_plot <- renderPlot({
+    ggplot(df_clean, aes(x = RateMDs, y = RateBeds, color = State_Abbrev, size = NumHospitals)) +
+      geom_point(alpha = 0.7) +
+      geom_smooth(method = "lm", color = "black", linetype = "dashed") +  
+      labs(title = "Physicians vs. Hospital Beds per 100,000 People",
+           x = "Physicians per 100K", y = "Hospital Beds per 100K") +
+      theme_minimal()
+  })
+  
+  # State Comparison Visualization (Handles Multiple Cities)
+  output$state_comparison <- renderPlot({
+    state_data <- df_clean %>% filter(State_Abbrev == input$selected_state)
+    
+    ggplot(state_data, aes(x = reorder(City_Name, NumHospitals), y = NumHospitals, fill = City_Name)) +
+      geom_bar(stat = "identity") +
+      coord_flip() +
+      labs(title = paste("Comparison of Cities in", input$selected_state), x = "City", y = "Number of Hospitals") +
+      theme_minimal()
+  })
+}
+
+# Run the app
+shinyApp(ui, server)
+
+
+
+
+```
+
